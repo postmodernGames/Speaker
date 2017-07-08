@@ -1,14 +1,10 @@
 
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 
-import javax.sound.sampled.AudioFormat;
-import javax.sound.sampled.AudioInputStream;
-import javax.sound.sampled.AudioSystem;
-import javax.sound.sampled.DataLine;
-import javax.sound.sampled.LineUnavailableException;
-import javax.sound.sampled.SourceDataLine;
+import javax.sound.sampled.*;
 
 
 public class Speaker
@@ -19,31 +15,20 @@ public class Speaker
 
     public static void main(String[] args)
     {
-		/*
-		  We check that there is exactely one command-line
-		  argument.
-		  If not, we display the usage message and exit.
-		*/
-        if (args.length != 1)
-        {
-            printUsageAndExit();
-        }
 
-		/*
-		  Now, that we're shure there is an argument, we
-		  take it as the filename of the soundfile
-		  we want to play.
-		*/
-        String	strFilename = args[0];
-        File	soundFile = new File(strFilename);
 
-		/*
-		  We have to read in the sound file.
-		*/
-        AudioInputStream	audioInputStream = null;
+        String inFilename = args[0];
+        String outFilename = args[1];
+        
+        File	soundFile = new File(inFilename);
+        File captureFile = new File(outFilename);
+
+        AudioInputStream audioInputStream = null;
+        AudioInputStream audioMicStream = null;
         try
         {
             audioInputStream = AudioSystem.getAudioInputStream(soundFile);
+            audioMicStream = AudioSystem.getAudioInputStream(captureFile);
         }
         catch (Exception e)
         {
@@ -56,18 +41,9 @@ public class Speaker
             System.exit(1);
         }
 
-		/*
-		  From the AudioInputStream, i.e. from the sound file,
-		  we fetch information about the format of the
-		  audio data.
-		  These information include the sampling frequency,
-		  the number of
-		  channels and the size of the samples.
-		  These information
-		  are needed to ask Java Sound for a suitable output line
-		  for this audio file.
-		*/
+
         AudioFormat	audioFormat = audioInputStream.getFormat();
+        AudioFormat targetFormat = audioMicStream.getFormat();
 
 		/*
 		  Asking for a line is a rather tricky thing.
@@ -88,18 +64,24 @@ public class Speaker
 		  don't care about the exact size. Java Sound will use
 		  some default value for the buffer size.
 		*/
+
+        TargetDataLine micLine = null;
+        DataLine.Info micInfo = new DataLine.Info(TargetDataLine.class,
+                targetFormat);
+
         SourceDataLine	line = null;
         DataLine.Info	info = new DataLine.Info(SourceDataLine.class,
                 audioFormat);
         try
         {
             line = (SourceDataLine) AudioSystem.getLine(info);
-
+            micLine = (TargetDataLine) AudioSystem.getLine(micInfo);
 			/*
 			  The line is there, but it is not yet ready to
 			  receive audio data. We have to open the line.
 			*/
             line.open(audioFormat);
+            micLine.open(targetFormat);
         }
         catch (LineUnavailableException e)
         {
@@ -118,7 +100,26 @@ public class Speaker
 		  (which means to your sound card). This has to be
 		  activated.
 		*/
-        line.start();
+        //line.start();
+
+        // Assume that the TargetDataLine, line, has already
+// been obtained and opened.
+        ByteArrayOutputStream out  = new ByteArrayOutputStream();
+        int numBytesRead;
+        byte[] data = new byte[line.getBufferSize() / 5];
+
+// Begin audio capture.
+        micLine.start();
+
+// Here, stopped is a global boolean set by another thread.
+        boolean stopped = false;
+
+        while (!stopped) {
+            // Read the next chunk of data from the TargetDataLine.
+            numBytesRead =  micLine.read(data, 0, data.length);
+            // Save this chunk of data.
+            out.write(data, 0, numBytesRead);
+        }
 
 		/*
 		  Ok, finally the line is prepared. Now comes the real
@@ -130,6 +131,7 @@ public class Speaker
 		  return value of -1 from the read method of the
 		  AudioInputStream.
 		*/
+		/*
         int	nBytesRead = 0;
         byte[]	abData = new byte[EXTERNAL_BUFFER_SIZE];
         while (nBytesRead != -1)
@@ -157,37 +159,21 @@ public class Speaker
 		  Thanks to Margie Fitch for bringing me on the right
 		  path to this solution.
 		*/
-        line.drain();
+        micLine.drain();
 
 		/*
 		  All data are played. We can close the shop.
 		*/
-        line.close();
+        micLine.close();
 
 		/*
 		  There is a bug in the jdk1.3/1.4.
 		  It prevents correct termination of the VM.
 		  So we have to exit ourselves.
 		*/
-        System.exit(0);
-    }
 
-
-    private static void printUsageAndExit()
-    {
-        out("SimpleAudioPlayer: usage:");
-        out("\tjava Speaker <soundfile>");
-        System.exit(1);
-    }
-
-
-    private static void out(String strMessage)
-    {
-        System.out.println(strMessage);
+      //  System.exit(0);
     }
 }
 
-
-
-/*** SimpleAudioPlayer.java ***/
 
