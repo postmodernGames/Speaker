@@ -1,179 +1,287 @@
+/*File AudioCapture01.java
+This program demonstrates the capture
+and subsequent playback of audio data.
 
+A GUI appears on the screen containing
+the following buttons:
+Capture
+Stop
+Playback
 
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.IOException;
+Input data from a microphone is
+captured and saved in a
+ByteArrayOutputStream object when the
+user clicks the Capture button.
 
+Data capture stops when the user clicks
+the Stop button.
+
+Playback begins when the user clicks
+the Playback button.
+
+Tested using SDK 1.4.0 under Win2000
+**************************************/
+
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.*;
+import java.io.*;
 import javax.sound.sampled.*;
 
+public class Speaker extends JFrame {
 
-public class Speaker
-{
-    private static final int	EXTERNAL_BUFFER_SIZE = 128000;
+    boolean stopCapture = false;
+    ByteArrayOutputStream  byteArrayOutputStream;
+    AudioFormat audioFormat;
+    TargetDataLine targetDataLine;
+    AudioInputStream audioInputStream;
+    SourceDataLine sourceDataLine;
 
+    public static void main(
+            String args[]) {
+        new Speaker();
+    }//end main
 
+    public Speaker() {//constructor
+        final JButton captureBtn = new JButton("Capture");
+        final JButton stopBtn = new JButton("Stop");
+        final JButton playBtn = new JButton("Playback");
 
-    public static void main(String[] args)
-    {
+        captureBtn.setEnabled(true);
+        stopBtn.setEnabled(false);
+        playBtn.setEnabled(false);
 
+        //Register anonymous listeners
+        captureBtn.addActionListener(
+                new ActionListener() {
+                    public void actionPerformed(
+                            ActionEvent e) {
+                        captureBtn.setEnabled(false);
+                        stopBtn.setEnabled(true);
+                        playBtn.setEnabled(false);
+                        //Capture input data from the
+                        // microphone until the Stop
+                        // button is clicked.
+                        captureAudio();
+                    }//end actionPerformed
+                }//end ActionListener
+        );//end addActionListener()
+        getContentPane().add(captureBtn);
 
-        String inFilename = args[0];
-        String outFilename = args[1];
-        
-        File	soundFile = new File(inFilename);
-        File captureFile = new File(outFilename);
+        stopBtn.addActionListener(
+                new ActionListener() {
+                    public void actionPerformed(
+                            ActionEvent e) {
+                        captureBtn.setEnabled(true);
+                        stopBtn.setEnabled(false);
+                        playBtn.setEnabled(true);
+                        //Terminate the capturing of
+                        // input data from the
+                        // microphone.
+                        stopCapture = true;
+                    }//end actionPerformed
+                }//end ActionListener
+        );//end addActionListener()
+        getContentPane().add(stopBtn);
 
-        AudioInputStream audioInputStream = null;
-        AudioInputStream audioMicStream = null;
-        try
-        {
-            audioInputStream = AudioSystem.getAudioInputStream(soundFile);
-            audioMicStream = AudioSystem.getAudioInputStream(captureFile);
-        }
-        catch (Exception e)
-        {
-			/*
-			  In case of an exception, we dump the exception
-			  including the stack trace to the console output.
-			  Then, we exit the program.
-			*/
-            e.printStackTrace();
-            System.exit(1);
-        }
+        playBtn.addActionListener(
+                new ActionListener() {
+                    public void actionPerformed(
+                            ActionEvent e) {
+                        //Play back all of the data
+                        // that was saved during
+                        // capture.
+                        playAudio();
+                    }//end actionPerformed
+                }//end ActionListener
+        );//end addActionListener()
+        getContentPane().add(playBtn);
 
+        getContentPane().setLayout(
+                new FlowLayout());
+        setTitle("Capture/Playback Demo");
+        setDefaultCloseOperation(
+                EXIT_ON_CLOSE);
+        setSize(250, 70);
+        setVisible(true);
+    }//end constructor
 
-        AudioFormat	audioFormat = audioInputStream.getFormat();
-        AudioFormat targetFormat = audioMicStream.getFormat();
+    //This method captures audio input
+    // from a microphone and saves it in
+    // a ByteArrayOutputStream object.
+    private void captureAudio() {
+        try {
+            //Get everything set up for
+            // capture
+            audioFormat = getAudioFormat();
+            DataLine.Info dataLineInfo =
+                    new DataLine.Info(
+                            TargetDataLine.class,
+                            audioFormat);
+            targetDataLine = (TargetDataLine)
+                    AudioSystem.getLine(
+                            dataLineInfo);
+            targetDataLine.open(audioFormat);
+            targetDataLine.start();
 
-		/*
-		  Asking for a line is a rather tricky thing.
-		  We have to construct an Info object that specifies
-		  the desired properties for the line.
-		  First, we have to say which kind of line we want. The
-		  possibilities are: SourceDataLine (for playback), Clip
-		  (for repeated playback)	and TargetDataLine (for
-		  recording).
-		  Here, we want to do normal playback, so we ask for
-		  a SourceDataLine.
-		  Then, we have to pass an AudioFormat object, so that
-		  the Line knows which format the data passed to it
-		  will have.
-		  Furthermore, we can give Java Sound a hint about how
-		  big the internal buffer for the line should be. This
-		  isn't used here, signaling that we
-		  don't care about the exact size. Java Sound will use
-		  some default value for the buffer size.
-		*/
+            //Create a thread to capture the
+            // microphone data and start it
+            // running.  It will run until
+            // the Stop button is clicked.
+            Thread captureThread =
+                    new Thread(
+                            new CaptureThread());
+            captureThread.start();
+        } catch (Exception e) {
+            System.out.println(e);
+            System.exit(0);
+        }//end catch
+    }//end captureAudio method
 
-        TargetDataLine micLine = null;
-        DataLine.Info micInfo = new DataLine.Info(TargetDataLine.class,
-                targetFormat);
+    //This method plays back the audio
+    // data that has been saved in the
+    // ByteArrayOutputStream
+    private void playAudio() {
+        try {
+            //Get everything set up for
+            // playback.
+            //Get the previously-saved data
+            // into a byte array object.
+            byte audioData[] =
+                    byteArrayOutputStream.
+                            toByteArray();
+            //Get an input stream on the
+            // byte array containing the data
+            InputStream byteArrayInputStream
+                    = new ByteArrayInputStream(
+                    audioData);
+            AudioFormat audioFormat =
+                    getAudioFormat();
+            audioInputStream =
+                    new AudioInputStream(
+                            byteArrayInputStream,
+                            audioFormat,
+                            audioData.length / audioFormat.
+                                    getFrameSize());
+            DataLine.Info dataLineInfo =
+                    new DataLine.Info(
+                            SourceDataLine.class,
+                            audioFormat);
+            sourceDataLine = (SourceDataLine)
+                    AudioSystem.getLine(
+                            dataLineInfo);
+            sourceDataLine.open(audioFormat);
+            sourceDataLine.start();
 
-        SourceDataLine	line = null;
-        DataLine.Info	info = new DataLine.Info(SourceDataLine.class,
-                audioFormat);
-        try
-        {
-            line = (SourceDataLine) AudioSystem.getLine(info);
-            micLine = (TargetDataLine) AudioSystem.getLine(micInfo);
-			/*
-			  The line is there, but it is not yet ready to
-			  receive audio data. We have to open the line.
-			*/
-            line.open(audioFormat);
-            micLine.open(targetFormat);
-        }
-        catch (LineUnavailableException e)
-        {
-            e.printStackTrace();
-            System.exit(1);
-        }
-        catch (Exception e)
-        {
-            e.printStackTrace();
-            System.exit(1);
-        }
+            //Create a thread to play back
+            // the data and start it
+            // running.  It will run until
+            // all the data has been played
+            // back.
+            Thread playThread =
+                    new Thread(new PlayThread());
+            playThread.start();
+        } catch (Exception e) {
+            System.out.println(e);
+            System.exit(0);
+        }//end catch
+    }//end playAudio
 
-		/*
-		  Still not enough. The line now can receive data,
-		  but will not pass them on to the audio output device
-		  (which means to your sound card). This has to be
-		  activated.
-		*/
-        //line.start();
+    //This method creates and returns an
+    // AudioFormat object for a given set
+    // of format parameters.  If these
+    // parameters don't work well for
+    // you, try some of the other
+    // allowable parameter values, which
+    // are shown in comments following
+    // the declarations.
+    private AudioFormat getAudioFormat() {
+        float sampleRate = 8000.0F;
+        //8000,11025,16000,22050,44100
+        int sampleSizeInBits = 16;
+        //8,16
+        int channels = 1;
+        //1,2
+        boolean signed = true;
+        //true,false
+        boolean bigEndian = false;
+        //true,false
+        return new AudioFormat(
+                sampleRate,
+                sampleSizeInBits,
+                channels,
+                signed,
+                bigEndian);
+    }//end getAudioFormat
+//===================================//
 
-        // Assume that the TargetDataLine, line, has already
-// been obtained and opened.
-        ByteArrayOutputStream out  = new ByteArrayOutputStream();
-        int numBytesRead;
-        byte[] data = new byte[line.getBufferSize() / 5];
+    //Inner class to capture data from microphone
+    class CaptureThread extends Thread {
+        //An arbitrary-size temporary holding buffer
+        byte tempBuffer[] = new byte[10000];
 
-// Begin audio capture.
-        micLine.start();
+        public void run() {
+            byteArrayOutputStream =
+                    new ByteArrayOutputStream();
+            stopCapture = false;
+            try {//Loop until stopCapture is set
+                // by another thread that
+                // services the Stop button.
+                while (!stopCapture) {
+                    //Read data from the internal
+                    // buffer of the data line.
+                    int cnt = targetDataLine.read(
+                            tempBuffer,
+                            0,
+                            tempBuffer.length);
+                    if (cnt > 0) {
+                        //Save data in output stream
+                        // object.
+                        byteArrayOutputStream.write(
+                                tempBuffer, 0, cnt);
+                    }//end if
+                }//end while
+                byteArrayOutputStream.close();
+            } catch (Exception e) {
+                System.out.println(e);
+                System.exit(0);
+            }//end catch
+        }//end run
+    }//end inner class CaptureThread
 
-// Here, stopped is a global boolean set by another thread.
-        boolean stopped = false;
+    //===================================//
+//Inner class to play back the data
+// that was saved.
+    class PlayThread extends Thread {
+        byte tempBuffer[] = new byte[10000];
 
-        while (!stopped) {
-            // Read the next chunk of data from the TargetDataLine.
-            numBytesRead =  micLine.read(data, 0, data.length);
-            // Save this chunk of data.
-            out.write(data, 0, numBytesRead);
-        }
-
-		/*
-		  Ok, finally the line is prepared. Now comes the real
-		  job: we have to write data to the line. We do this
-		  in a loop. First, we read data from the
-		  AudioInputStream to a buffer. Then, we write from
-		  this buffer to the Line. This is done until the end
-		  of the file is reached, which is detected by a
-		  return value of -1 from the read method of the
-		  AudioInputStream.
-		*/
-		/*
-        int	nBytesRead = 0;
-        byte[]	abData = new byte[EXTERNAL_BUFFER_SIZE];
-        while (nBytesRead != -1)
-        {
-            try
-            {
-                nBytesRead = audioInputStream.read(abData, 0, abData.length);
-            }
-            catch (IOException e)
-            {
-                e.printStackTrace();
-            }
-            if (nBytesRead >= 0)
-            {
-                int	nBytesWritten = line.write(abData, 0, nBytesRead);
-            }
-        }
-
-		/*
-		  Wait until all data are played.
-		  This is only necessary because of the bug noted below.
-		  (If we do not wait, we would interrupt the playback by
-		  prematurely closing the line and exiting the VM.)
-
-		  Thanks to Margie Fitch for bringing me on the right
-		  path to this solution.
-		*/
-        micLine.drain();
-
-		/*
-		  All data are played. We can close the shop.
-		*/
-        micLine.close();
-
-		/*
-		  There is a bug in the jdk1.3/1.4.
-		  It prevents correct termination of the VM.
-		  So we have to exit ourselves.
-		*/
-
-      //  System.exit(0);
-    }
+        public void run() {
+            try {
+                int cnt;
+                //Keep looping until the input
+                // read method returns -1 for
+                // empty stream.
+                while ((cnt = audioInputStream.
+                        read(tempBuffer, 0,
+                                tempBuffer.length)) != -1) {
+                    if (cnt > 0) {
+                        //Write data to the internal
+                        // buffer of the data line
+                        // where it will be delivered
+                        // to the speaker.
+                        sourceDataLine.write(
+                                tempBuffer, 0, cnt);
+                    }//end if
+                }//end while
+                //Block and wait for internal
+                // buffer of the data line to
+                // empty.
+                sourceDataLine.drain();
+                sourceDataLine.close();
+            } catch (Exception e) {
+                System.out.println(e);
+                System.exit(0);
+            }//end catch
+        }//end run
+    }//end inner class PlayThread
 }
-
-
